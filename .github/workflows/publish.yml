@@ -46,12 +46,10 @@ jobs:
           path: public
       - uses: actions/deploy-pages@v4
         id: deployment
-      - name: Enforce HTTPS once GitHub has issued the certificate
+      - name: Verify HTTPS remains enforced
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh api "repos/$GITHUB_REPOSITORY/pages" --jq '.https_certificate.state == "approved"' | grep -qx true; then
-            gh api --method PUT "repos/$GITHUB_REPOSITORY/pages" -F https_enforced=true
-          else
-            echo "GitHub certificate is still provisioning; the next publication will check again." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          # HTTPS was enabled once in Pages settings. The deployment token can
+          # read that setting, but cannot rewrite repository settings.
+          gh api "repos/$GITHUB_REPOSITORY/pages" --jq '.https_enforced' | grep -qx true
