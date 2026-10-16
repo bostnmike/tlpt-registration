@@ -1,0 +1,48 @@
+name: Publish registration
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: registration-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Read the canonical registration source
+        uses: actions/checkout@v4
+        with:
+          repository: bostnmike/TLPT-poker
+          ref: main
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate the working form and static hosting
+        working-directory: source
+        run: |
+          node scripts/test-register-page.mjs
+          node --test registration-domain/tests/pages.test.mjs
+      - name: Build only registration (no cashier or other sites)
+        run: node source/registration-domain/build.mjs "$GITHUB_WORKSPACE/public"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: public
+      - uses: actions/deploy-pages@v4
+        id: deployment
