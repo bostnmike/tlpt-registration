@@ -23,11 +23,27 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Read the publication request
+        uses: actions/checkout@v4
+        with:
+          path: publisher
+          persist-credentials: false
+      - name: Choose the canonical source revision
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=main
+          if [[ "$GITHUB_EVENT_NAME" == push && -f publisher/source-revision.txt ]]; then
+            revision=$(cat publisher/source-revision.txt)
+            [[ "$revision" =~ ^[a-f0-9]{40}$ ]] || { echo 'Invalid source revision'; exit 1; }
+          fi
+          printf 'revision=%s\n' "$revision" >> "$GITHUB_OUTPUT"
       - name: Read the canonical registration source
         uses: actions/checkout@v4
         with:
           repository: bostnmike/TLPT-poker
-          ref: main
+          ref: ${{ steps.source.outputs.revision }}
           path: source
           persist-credentials: false
       - uses: actions/setup-node@v4
@@ -37,9 +53,11 @@ jobs:
         working-directory: source
         run: |
           node scripts/test-register-page.mjs
-          node --test registration-domain/tests/pages.test.mjs
+          node --test registration-domain/tests/*.test.mjs
       - name: Build only registration (no cashier or other sites)
-        run: node source/registration-domain/build.mjs "$GITHUB_WORKSPACE/public"
+        run: |
+          node source/registration-domain/build.mjs "$GITHUB_WORKSPACE/public"
+          git -C source rev-parse HEAD > public/source-revision.txt
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
