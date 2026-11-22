@@ -3,25 +3,24 @@ name: Publish registration
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '17 * * * *'
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: registration-pages
   cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      artifact_name: ${{ steps.artifact.outputs.name }}
     steps:
       - name: Read the publication request
         uses: actions/checkout@v4
@@ -34,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           revision=main
-          if [[ "$GITHUB_EVENT_NAME" == push && -f publisher/source-revision.txt ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == pull_request ]] && [[ -f publisher/source-revision.txt ]]; then
             revision=$(cat publisher/source-revision.txt)
             [[ "$revision" =~ ^[a-f0-9]{40}$ ]] || { echo 'Invalid source revision'; exit 1; }
           fi
@@ -58,12 +57,31 @@ jobs:
         run: |
           node source/registration-domain/build.mjs "$GITHUB_WORKSPACE/public"
           git -C source rev-parse HEAD > public/source-revision.txt
-      - uses: actions/configure-pages@v5
+      - name: Name this checked build artifact
+        id: artifact
+        shell: bash
+        run: printf 'name=registration-pages-%s-%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: public
+          name: ${{ steps.artifact.outputs.name }}
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@v5
       - uses: actions/deploy-pages@v4
         id: deployment
+        with:
+          artifact_name: ${{ needs.build.outputs.artifact_name }}
       - name: Verify HTTPS remains enforced
         env:
           GH_TOKEN: ${{ github.token }}
